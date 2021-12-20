@@ -3,24 +3,81 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile # 퍼블리셔의 QoS 설정
 from std_msgs.msg import String # 퍼블리시 메시지 타입
 
+
+import requests
+import uuid
+import time
+import json
+
+
+
+
 class OCR_TTS_Publisher(Node): # Node 클래스 상속
 
     def __init__(self):
         super().__init__('OCR_TTS_Publisher') # 노드 이름 지정
         qos_profile = QoSProfile(depth=10) # 퍼블리시할 데이터를 버퍼에 10개까지 저장
-        self.tts_publisher = self.create_publisher(String, 'ocr_tts_message', qos_profile)
+        self.tts_publisher = self.create_publisher(String, 'tts_message', qos_profile)
         self.timer = self.create_timer(1, self.publish_msg) # 콜백함수 : n초마다 지정한 콜백함수 실행
         self.count = 0
+        self.ttsname = ""
 
     def publish_msg(self):
+        self.ocr()
         msg = String() # 퍼블리시할 메시지
-        msg.data = '송민영'.format(self.count) # 메시지 저장
+        msg.data = self.ttsname.format(self.count) # 메시지 저장
         self.tts_publisher.publish(msg) # 메시지 퍼블리시
         self.get_logger().info('Published message: {0}'.format(msg.data)) # 콘솔창에 출력 (==print함수)
 
+    def ocr(self):
+        api_url = 'https://2db3c4f0f443425e91076e90310bc461.apigw.ntruss.com/custom/v1/13111/71345557e5b12d3b42ffdbf516755f0c9c7f7c3bc51dd5cea5d888581fc4d9a7/infer'
+        secret_key = 'S3RtbGdXWUtDc0xlYW1ybGFrTGhEanlMWHdpbmRCTHM='
+
+        image_file = 'input.jpg'
+        output_file = 'output.json'
+
+        request_json = {
+            'images': [
+                {
+                    'format': 'jpg',
+                    'name': 'demo',
+                    'templateIds': [12333]
+                }
+            ],
+            'requestId': str(uuid.uuid4()),
+            'version': 'V2',
+            'timestamp': int(round(time.time() * 1000))
+        }
+        payload = {'message': json.dumps(request_json).encode('UTF-8')}
+        files = [
+        ('file', open(image_file,'rb'))
+        ]
+        headers = {
+        'X-OCR-SECRET': secret_key
+        }
+
+        response = requests.request("POST", api_url, headers=headers, data = payload, files = files)
+
+        res = json.loads(response.text.encode('utf8'))
+        print(res)
+
+        with open(output_file, 'w', encoding='utf-8') as outfile:
+            json.dump(res, outfile, indent=4, ensure_ascii=False)
+
+        #########
+        company = res['images'][0]['title']['inferText']
+        name = res['images'][0]['fields'][0]['inferText']
+        product = res['images'][0]['fields'][1]['inferText']
+        ######
+
+        print('company : ',company)
+        print('name : ',name)
+        print('product : ',product)
+        self.ttsname = name
+
 def main(args=None):
     rclpy.init(args=args) # 초기화
-    node = TTS_Publisher()
+    node = OCR_TTS_Publisher()
     try:
         node.get_logger().info("spin될까?")
         rclpy.spin_once(node) # 콜백함수 실행
@@ -34,4 +91,5 @@ def main(args=None):
 
 if __name__ == '__main__':
     main()
+
 
